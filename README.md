@@ -17,7 +17,7 @@
 
 ## 使い方
 
-https://shiokara2424.github.io/stc-board/ にアクセス、またはローカルで `index.html` を開く。
+https://ot-vibecoding.github.io/stc-board/ にアクセス、またはローカルで `index.html` を開く。
 
 ## 技術
 
