@@ -43,7 +43,7 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans JP',sans
 <script>
 'use strict';
 
-const VERSION="1.5.2";
+const VERSION="1.5.3";
 
 /* ═══ CONSTANTS ═══ */
 const ACTS=[{id:1,label:"ACT 1",sub:"pp.1–25",color:"#D4A017"},{id:2,label:"ACT 2a",sub:"pp.25–55",color:"#2E8B7A"},{id:3,label:"ACT 2b",sub:"pp.55–75",color:"#B94A2C"},{id:4,label:"ACT 3",sub:"pp.75–110",color:"#6B5CA5"}];
@@ -383,7 +383,12 @@ function closeModal(){S.editCard=null;S.editGroup=null;document.getElementById("
 
 function mkHandle(item,color){
   const d=document.createElement("div");d.className="resize-handle";
-  d.innerHTML=`<svg width="10" height="10" viewBox="0 0 10 10"><line x1="9" y1="1" x2="1" y2="9" stroke="${color}" stroke-width="1.2"/><line x1="9" y1="4" x2="4" y2="9" stroke="${color}" stroke-width="1.2"/><line x1="9" y1="7" x2="7" y2="9" stroke="${color}" stroke-width="1.2"/></svg>`;
+  const NS="http://www.w3.org/2000/svg",svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("width","10");svg.setAttribute("height","10");svg.setAttribute("viewBox","0 0 10 10");
+  [[9,1,1,9],[9,4,4,9],[9,7,7,9]].forEach(([x1,y1,x2,y2])=>{const ln=document.createElementNS(NS,"line");
+    ln.setAttribute("x1",x1);ln.setAttribute("y1",y1);ln.setAttribute("x2",x2);ln.setAttribute("y2",y2);
+    ln.setAttribute("stroke",safeColor(color,"#888"));ln.setAttribute("stroke-width","1.2");svg.appendChild(ln)});
+  d.appendChild(svg);
   d.addEventListener("mousedown",e=>startResize(e,item));d.addEventListener("touchstart",e=>startResize(e,item),{passive:false});return d;
 }
 
@@ -522,6 +527,8 @@ function migrateItems(items){
     "#1a1a2e","#16213e","#0f3460","#533483","#e94560","#1b998b","#e8b931","#c75b39","#2d4059","#444444",
     "#bdd3e2","#bee3cc","#e2ceb2","#d5bee2","#e2bebe","#adddd4","#e8d9a0","#e5c0a8","#b5ced6","#cccccc",
     "#252540","#1f2e50","#184070","#604098","#b8354c","#157a6e","#b89428","#9e482e","#384d6a","#525252"];
+  if(!Array.isArray(items))return[];
+  items=items.filter(i=>i&&typeof i==="object"&&(i.type==="card"||i.type==="group"));
   items.forEach(i=>{
     if(i.type==="card"&&i.colorIdx==null){
       const hex=(i.color||"").toLowerCase();
@@ -532,10 +539,26 @@ function migrateItems(items){
     if(!i.tags)i.tags=[];
     if(i.type==="card"&&i.ghost==null)i.ghost=false;
   });
-  return items;
+  return items.map(sanitizeItem);
 }
+
+/* ═══ 読み込んだデータの検証 ═══
+   ファイルや自動保存から読んだ値は、画面に出す前に型と範囲をそろえる
+   (色の欄などに HTML やスクリプトを仕込まれても実行されないようにする) */
+function safeColor(v,def){return typeof v==="string"&&/^#[0-9a-fA-F]{3,8}$/.test(v)?v:def}
+function safeNum(v,def,min,max){const n=Number(v);if(!Number.isFinite(n))return def;return Math.min(max,Math.max(min,n))}
+function safeInt(v,def,min,max){return Math.round(safeNum(v,def,min,max))}
+function safeStr(v){return typeof v==="string"?v:(v==null?"":String(v))}
+function safeTags(v){return Array.isArray(v)?[...new Set(v.map(Number).filter(n=>Number.isInteger(n)&&n>=0&&n<TAG_COLS.length))]:[]}
+function sanitizeItem(i){
+  const base={id:typeof i.id==="string"&&i.id?i.id:uid(),type:i.type,x:safeNum(i.x,0,-100000,100000),w:safeNum(i.w,i.type==="card"?CW:GW,100,10000),h:safeNum(i.h,i.type==="card"?CH:GH,35,10000),tags:safeTags(i.tags)};
+  if(i.type==="group")return Object.assign(base,{y:safeNum(i.y,0,-100000,100000),color:safeColor(i.color,"#888"),name:safeStr(i.name)});
+  return Object.assign(base,{y:safeNum(i.y,0,-100000,100000),actIdx:safeInt(i.actIdx,0,0,ACTS.length-1),description:safeStr(i.description),emotion:safeStr(i.emotion),conflict:safeStr(i.conflict),colorIdx:safeInt(i.colorIdx,0,0,9),groupId:typeof i.groupId==="string"?i.groupId:null,ghost:!!i.ghost});
+}
+function safeTheme(v){return v==="dark"?"dark":"light"}
+function safeTagNames(v){const a=Array.isArray(v)?v:[];return TAG_COLS.map((_,k)=>safeStr(a[k]))}
 function autoSave(){try{localStorage.setItem(AUTOSAVE_KEY,JSON.stringify({projectName:S.name,items:S.items,theme:S.theme,fontPt:S.fontPt,tagNames:S.tagNames}))}catch{}}
-function autoRestore(){try{const raw=localStorage.getItem(AUTOSAVE_KEY);if(!raw)return;const d=JSON.parse(raw);if(d.items){S.items=migrateItems(d.items);if(d.projectName)S.name=d.projectName;if(d.theme)S.theme=d.theme;if(d.fontPt!=null)S.fontPt=d.fontPt;if(d.tagNames)S.tagNames=d.tagNames}}catch{}}
+function autoRestore(){try{const raw=localStorage.getItem(AUTOSAVE_KEY);if(!raw)return;const d=JSON.parse(raw);if(d.items){S.items=migrateItems(d.items);if(d.projectName)S.name=safeStr(d.projectName);if(d.theme)S.theme=safeTheme(d.theme);if(d.fontPt!=null)S.fontPt=safeInt(d.fontPt,0,-4,8);if(d.tagNames)S.tagNames=safeTagNames(d.tagNames)}}catch{}}
 
 /* ═══ SAVE / LOAD / NEW ═══ */
 let fileHandle=null;
@@ -587,7 +610,7 @@ async function doLoad(){
       const d=JSON.parse(txt);
       pushUndo();
       if(d.items)S.items=migrateItems(d.items);else if(d.cards)S.items=migrateItems(d.cards);
-      if(d.projectName)S.name=d.projectName;if(d.theme)S.theme=d.theme;if(d.tagNames)S.tagNames=d.tagNames;
+      if(d.projectName)S.name=safeStr(d.projectName);if(d.theme)S.theme=safeTheme(d.theme);if(d.tagNames)S.tagNames=safeTagNames(d.tagNames);
       fileHandle=fh;
       S.dirty=false;render();return;
     }catch(e){if(e.name==="AbortError")return}
@@ -595,7 +618,7 @@ async function doLoad(){
   const inp=document.createElement("input");inp.type="file";inp.accept=".json";inp.style.cssText="position:fixed;left:-9999px";
   document.body.appendChild(inp);
   inp.onchange=e=>{const f=e.target.files?.[0];if(!f)return dn();
-    const r=new FileReader();r.onload=ev=>{try{const d=JSON.parse(ev.target.result);pushUndo();if(d.items)S.items=migrateItems(d.items);else if(d.cards)S.items=migrateItems(d.cards);if(d.projectName)S.name=d.projectName;if(d.theme)S.theme=d.theme;if(d.tagNames)S.tagNames=d.tagNames;S.dirty=false;fileHandle=null}catch{alert("読み込み失敗")}dn();render()};
+    const r=new FileReader();r.onload=ev=>{try{const d=JSON.parse(ev.target.result);pushUndo();if(d.items)S.items=migrateItems(d.items);else if(d.cards)S.items=migrateItems(d.cards);if(d.projectName)S.name=safeStr(d.projectName);if(d.theme)S.theme=safeTheme(d.theme);if(d.tagNames)S.tagNames=safeTagNames(d.tagNames);S.dirty=false;fileHandle=null}catch{alert("読み込み失敗")}dn();render()};
     r.onerror=()=>{alert("読み込み失敗");dn()};r.readAsText(f)};
   function dn(){try{document.body.removeChild(inp)}catch{}}
   setTimeout(()=>inp.click(),0);
